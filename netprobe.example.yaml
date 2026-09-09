@@ -1,0 +1,57 @@
+# Copy to the platform configuration path shown in the README.
+database: netprobe.db
+concurrency: 32
+raw_retention: 336h       # 14 days
+rollup_retention: 8760h  # 1 year
+incident_window: 5s
+
+targets:
+  - name: home-router
+    description: Home LAN default gateway
+    host: 192.168.1.1
+    type: icmp
+    interval: 1s
+    timeout: 800ms
+    tags: [local]
+
+  - name: public-internet
+    description: Stable public endpoint; replace with one you trust
+    host: 1.1.1.1
+    type: icmp
+    interval: 1s
+    timeout: 800ms
+    tags: [public]
+
+  - name: vpn-public
+    description: VPN server's public address
+    host: vpn.example.net
+    type: icmp
+    interval: 1s
+    timeout: 800ms
+    tags: [public, vpn]
+
+  - name: work-dns
+    description: Internal resolver queried through the VPN
+    type: dns
+    resolver: 10.20.0.53
+    query: intranet.example.corp
+    interval: 1s
+    timeout: 900ms
+    tags: [vpn, work]
+
+  - name: remote-desktop
+    description: Remote desktop service
+    host: desktop.example.corp
+    type: tcp
+    port: 3389
+    interval: 1s
+    timeout: 900ms
+    tags: [vpn, work, service]
+
+  - name: service-health
+    description: Optional HTTPS application check
+    type: http
+    url: https://service.example.com/health
+    interval: 5s
+    timeout: 3s
+    tags: [service]
