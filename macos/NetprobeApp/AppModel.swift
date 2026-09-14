@@ -7,7 +7,7 @@ final class AppModel: ObservableObject {
         case fiveMinutes = "5m", fifteenMinutes = "15m", oneHour = "1h", sixHours = "6h"
         var id: String { rawValue }
         var label: String {
-            switch self { case .fiveMinutes: "5 minutes"; case .fifteenMinutes: "15 minutes"; case .oneHour: "1 hour"; case .sixHours: "6 hours" }
+            switch self { case .fiveMinutes: "Last 5 minutes"; case .fifteenMinutes: "Last 15 minutes"; case .oneHour: "Last hour"; case .sixHours: "Last 6 hours" }
         }
     }
 
@@ -25,14 +25,28 @@ final class AppModel: ObservableObject {
     private var collector: Process?
     private var pollingTask: Task<Void, Never>?
     private var actionMessageUntil = Date.distantPast
+    private var currentRunStartedAt: Date?
 
     init() {
         configPath = UserDefaults.standard.string(forKey: "configPath") ?? NetprobePaths.defaultConfig.path
         loadConfiguration()
     }
 
-    var observations: [Observation] { bundle?.observations ?? [] }
-    var incidents: [Incident] { bundle?.incidents ?? [] }
+    var observations: [Observation] {
+        observationsSinceCurrentRun(bundle?.observations ?? [])
+    }
+    var incidents: [Incident] {
+        guard let currentRunStartedAt else { return bundle?.incidents ?? [] }
+        return (bundle?.incidents ?? []).filter { ($0.end ?? $0.start) >= currentRunStartedAt }
+    }
+    var gaps: [CollectionGap] {
+        guard let currentRunStartedAt else { return bundle?.gaps ?? [] }
+        return (bundle?.gaps ?? []).filter { $0.end >= currentRunStartedAt }
+    }
+    var markers: [Marker] {
+        guard let currentRunStartedAt else { return bundle?.markers ?? [] }
+        return (bundle?.markers ?? []).filter { $0.timestamp >= currentRunStartedAt }
+    }
     var targets: [ProbeTarget] { bundle?.targets ?? [] }
     var latestByTarget: [String: Observation] {
         Dictionary(grouping: observations, by: \.target).compactMapValues { $0.max(by: { $0.timestamp < $1.timestamp }) }
@@ -90,7 +104,12 @@ final class AppModel: ObservableObject {
             let log = try FileHandle(forWritingTo: logURL); try log.seekToEnd()
             let process = Process(); process.executableURL = helper; process.arguments = ["--config", configPath, "run"]; process.standardOutput = log; process.standardError = log
             process.terminationHandler = { [weak self] process in Task { @MainActor in self?.collectorDidStop(status: process.terminationStatus); try? log.close() } }
-            try process.run(); collector = process; collectorOwned = true; showActionMessage("Collector started")
+            try process.run()
+            currentRunStartedAt = Date()
+            collector = process
+            collectorOwned = true
+            showActionMessage("Collector started")
+            refresh()
         } catch { message = "Could not start collector: \(error.localizedDescription)" }
     }
 
@@ -126,7 +145,7 @@ final class AppModel: ObservableObject {
             let destination = URL(fileURLWithPath: configPath)
             try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             if FileManager.default.fileExists(atPath: destination.path) { message = "A configuration already exists at this location"; return }
-            try FileManager.default.copyItem(at: example, to: destination); loadConfiguration(); showActionMessage("Example installed—replace its sample hosts before collecting")
+            try FileManager.default.copyItem(at: example, to: destination); loadConfiguration(); showActionMessage("Default configuration installed")
         } catch { message = "Could not install example: \(error.localizedDescription)" }
     }
 
@@ -158,6 +177,11 @@ final class AppModel: ObservableObject {
 
     private func clean(_ value: String) -> String {
         value.replacingOccurrences(of: "netprobe: ", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func observationsSinceCurrentRun(_ values: [Observation]) -> [Observation] {
+        guard let currentRunStartedAt else { return values }
+        return values.filter { $0.timestamp >= currentRunStartedAt }
     }
 
     private func showActionMessage(_ value: String) {

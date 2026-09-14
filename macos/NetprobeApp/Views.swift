@@ -52,7 +52,9 @@ struct MainToolbar: ToolbarContent {
             Picker("Range", selection: $model.selectedRange) {
                 ForEach(AppModel.Range.allCases) { range in Text(range.label).tag(range) }
             }
-            .frame(width: 135).onChange(of: model.selectedRange) { _ in model.refresh() }
+            .frame(width: 165)
+            .help("Changes the visible history. Collection continues until you press Stop.")
+            .onChange(of: model.selectedRange) { _ in model.refresh() }
             Button { model.refresh() } label: { Label("Refresh", systemImage: "arrow.clockwise") }.disabled(model.isRefreshing)
             Button { model.showMarkerSheet = true } label: { Label("Mark", systemImage: "bookmark") }
             Button { model.exportReport() } label: { Label("Report", systemImage: "square.and.arrow.up") }
@@ -98,9 +100,30 @@ struct MetricCard: View {
 
 struct LatencyChart: View {
     @EnvironmentObject var model: AppModel
+    struct ChartPoint: Identifiable {
+        let observation: Observation
+        let segment: String
+        var id: Int64 { observation.id }
+    }
     var filtered: [Observation] {
         guard let target = model.selectedTarget else { return model.observations }
         return model.observations.filter { $0.target == target }
+    }
+    var chartPoints: [ChartPoint] {
+        let ordered = filtered.sorted { $0.timestamp < $1.timestamp }
+        var segmentByTarget: [String: Int] = [:]
+        var previousByTarget: [String: Date] = [:]
+        return ordered.map { observation in
+            let previous = previousByTarget[observation.target]
+            if let previous, model.gaps.contains(where: { $0.start <= observation.timestamp && $0.end >= previous }) {
+                segmentByTarget[observation.target, default: 0] += 1
+            }
+            previousByTarget[observation.target] = observation.timestamp
+            return ChartPoint(
+                observation: observation,
+                segment: "\(observation.target)-\(segmentByTarget[observation.target, default: 0])"
+            )
+        }
     }
     var maxLatency: Double { max(10, filtered.compactMap(\.latencyMS).max() ?? 10) }
     var body: some View {
@@ -121,10 +144,10 @@ struct LatencyChart: View {
                         RuleMark(x: .value("Incident", incident.start))
                             .foregroundStyle(.red.opacity(0.35)).lineStyle(StrokeStyle(lineWidth: 5))
                     }
-                    ForEach(filtered.filter(\.success)) { observation in
-                        if let latency = observation.latencyMS {
-                            LineMark(x: .value("Time", observation.timestamp), y: .value("Latency", latency), series: .value("Target", observation.target))
-                                .foregroundStyle(by: .value("Target", observation.target))
+                    ForEach(chartPoints.filter { $0.observation.success }) { point in
+                        if let latency = point.observation.latencyMS {
+                            LineMark(x: .value("Time", point.observation.timestamp), y: .value("Latency", latency), series: .value("Run", point.segment))
+                                .foregroundStyle(by: .value("Target", point.observation.target))
                                 .interpolationMethod(.linear)
                         }
                     }
@@ -133,7 +156,7 @@ struct LatencyChart: View {
                             .foregroundStyle(.red).symbolSize(70)
                             .annotation(position: .top) { Image(systemName: "xmark").font(.caption2.bold()).foregroundStyle(.red) }
                     }
-                    ForEach(model.bundle?.markers ?? []) { marker in
+                    ForEach(model.markers) { marker in
                         RuleMark(x: .value("Marker", marker.timestamp)).foregroundStyle(.orange).lineStyle(StrokeStyle(dash: [3, 3]))
                     }
                 }
@@ -193,8 +216,8 @@ struct ConfigurationView: View {
             TextField("Configuration path", text: $model.configPath).textFieldStyle(.roundedBorder)
             if model.configurationText.isEmpty {
                 VStack(spacing: 12) {
-                    EmptyState(title: "No configuration", symbol: "doc.badge.plus", detail: "Create an example, then replace its sample hosts with your network targets.")
-                    Button("Install Example") { model.installExampleConfiguration() }
+                    EmptyState(title: "No configuration", symbol: "doc.badge.plus", detail: "Install the four default network targets to get started.")
+                    Button("Install Defaults") { model.installExampleConfiguration() }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 TextEditor(text: $model.configurationText).font(.system(.body, design: .monospaced)).scrollContentBackground(.hidden).padding(8).background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
