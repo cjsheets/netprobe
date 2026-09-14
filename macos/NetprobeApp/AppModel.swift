@@ -24,6 +24,7 @@ final class AppModel: ObservableObject {
 
     private var collector: Process?
     private var pollingTask: Task<Void, Never>?
+    private var actionMessageUntil = Date.distantPast
 
     init() {
         configPath = UserDefaults.standard.string(forKey: "configPath") ?? NetprobePaths.defaultConfig.path
@@ -73,7 +74,9 @@ final class AppModel: ObservableObject {
             do {
                 bundle = try JSONDecoder.netprobe.decode(ExportBundle.self, from: Data(result.output.utf8))
                 if selectedTarget == nil { selectedTarget = bundle?.targets.first?.name }
-                message = "Updated \(Date().formatted(date: .omitted, time: .standard))"
+                if Date() >= actionMessageUntil {
+                    message = "Updated \(Date().formatted(date: .omitted, time: .standard))"
+                }
             } catch { message = "Could not read collector data: \(error.localizedDescription)" }
         }
     }
@@ -88,18 +91,18 @@ final class AppModel: ObservableObject {
             let log = try FileHandle(forWritingTo: logURL); try log.seekToEnd()
             let process = Process(); process.executableURL = helper; process.arguments = ["--config", configPath, "run"]; process.standardOutput = log; process.standardError = log
             process.terminationHandler = { [weak self] process in Task { @MainActor in self?.collectorDidStop(status: process.terminationStatus); try? log.close() } }
-            try process.run(); collector = process; collectorOwned = true; message = "Collector started"
+            try process.run(); collector = process; collectorOwned = true; showActionMessage("Collector started")
         } catch { message = "Could not start collector: \(error.localizedDescription)" }
     }
 
     func stopCollector() {
         guard let collector, collector.isRunning else { collectorOwned = false; return }
-        collector.terminate(); message = "Stopping collector…"
+        collector.terminate(); showActionMessage("Stopping collector…")
     }
 
     private func collectorDidStop(status: Int32) {
         collector = nil; collectorOwned = false
-        message = status == 0 || status == 15 ? "Collector stopped" : "Collector exited with status \(status)"
+        showActionMessage(status == 0 || status == 15 ? "Collector stopped" : "Collector exited with status \(status)")
         refresh()
     }
 
@@ -109,7 +112,7 @@ final class AppModel: ObservableObject {
         markerText = ""; showMarkerSheet = false
         Task {
             let result = await ProcessRunner.capture(executable: helper, arguments: ["--config", configPath, "mark", text])
-            message = result.status == 0 ? "Marker recorded" : clean(result.error)
+            showActionMessage(result.status == 0 ? "Marker recorded" : clean(result.error))
             refresh()
         }
     }
@@ -124,7 +127,7 @@ final class AppModel: ObservableObject {
             let destination = URL(fileURLWithPath: configPath)
             try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             if FileManager.default.fileExists(atPath: destination.path) { message = "A configuration already exists at this location"; return }
-            try FileManager.default.copyItem(at: example, to: destination); loadConfiguration(); message = "Example installed—replace its sample hosts before collecting"
+            try FileManager.default.copyItem(at: example, to: destination); loadConfiguration(); showActionMessage("Example installed—replace its sample hosts before collecting")
         } catch { message = "Could not install example: \(error.localizedDescription)" }
     }
 
@@ -138,7 +141,7 @@ final class AppModel: ObservableObject {
         guard let helper = NetprobePaths.helper else { message = "Configuration saved; helper not found for validation"; return }
         Task {
             let result = await ProcessRunner.capture(executable: helper, arguments: ["--config", configPath, "config", "check"])
-            message = result.status == 0 ? result.output.trimmingCharacters(in: .whitespacesAndNewlines) : clean(result.error)
+            showActionMessage(result.status == 0 ? result.output.trimmingCharacters(in: .whitespacesAndNewlines) : clean(result.error))
             if result.status == 0 { refresh() }
         }
     }
@@ -149,12 +152,17 @@ final class AppModel: ObservableObject {
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task {
             let result = await ProcessRunner.capture(executable: helper, arguments: ["--config", configPath, "report", "--since", selectedRange.rawValue, "--format", "html", "--output", url.path])
-            message = result.status == 0 ? "Report saved to \(url.lastPathComponent)" : clean(result.error)
+            showActionMessage(result.status == 0 ? "Report saved to \(url.lastPathComponent)" : clean(result.error))
             if result.status == 0 { NSWorkspace.shared.activateFileViewerSelecting([url]) }
         }
     }
 
     private func clean(_ value: String) -> String {
         value.replacingOccurrences(of: "netprobe: ", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func showActionMessage(_ value: String) {
+        message = value
+        actionMessageUntil = Date().addingTimeInterval(5)
     }
 }
