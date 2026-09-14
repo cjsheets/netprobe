@@ -1,37 +1,33 @@
 # netprobe
 
-`netprobe` is a self-contained terminal network recorder for answering a frustratingly specific question: *was that five-second interruption my LAN, my ISP, the VPN, the work network, or just the remote service?*
+`netprobe` records enough context to answer a frustratingly specific question: *was that five-second interruption my LAN, my ISP, the VPN, the work network, or just the remote service?*
 
-It schedules ICMP, TCP, DNS, and HTTP probes independently, writes synchronized observations to local SQLite in WAL mode, displays a shared live timeline, groups failures into incidents, and creates offline HTML, CSV, and JSON reports. Collection and the terminal viewer are separate processes, so closing `watch` does not stop `run`.
+It runs ICMP, TCP, DNS, and HTTP probes on independent schedules, stores the results in a local SQLite database, groups related failures into likely incidents, and exports offline HTML, CSV, and JSON reports. Use the native macOS app or the same collector from a terminal on macOS, Linux, and Windows.
 
-## Install and quick start
+![Netprobe macOS dashboard showing live latency, routes, and target status](docs/images/netprobe-dashboard.png)
 
-Download the executable for your operating system from a release, or build it with Go 1.24 or newer:
+The screenshot uses the included example configuration. Its VPN and work targets are placeholders, so those failures are expected.
 
-```text
-go build -trimpath -ldflags "-s -w" -o netprobe ./cmd/netprobe
-```
+## macOS quick start
 
-Copy `netprobe.example.yaml` to one of these locations and replace the example hosts:
-
-- macOS: `~/Library/Application Support/netprobe/config.yaml`
-- Windows: `%AppData%\netprobe\config.yaml`
-- Linux: `~/.config/netprobe/config.yaml`
-
-Any location can be used with `--config PATH` or `NETPROBE_CONFIG`.
-
-### Native macOS app
-
-Netprobe also includes a SwiftUI dashboard for macOS 13 and newer. It provides live latency/loss charts, target routes, incidents, markers, configuration validation, collector controls, report export, and menu-bar status while retaining the same Go collector and SQLite database.
-
-Build a universal Apple Silicon/Intel application with Xcode and Go installed:
+The GUI requires macOS 13 or newer. Build the universal Apple Silicon/Intel app with Xcode and Go 1.24 or newer:
 
 ```text
 ./scripts/build-macos-app.sh
 open dist/Netprobe.app
 ```
 
-The development build is ad-hoc signed. For Developer ID signing, provide the exact identity from `security find-identity -v -p codesigning`:
+Once the app opens:
+
+1. Open **Configuration** and choose **Install Example**.
+2. Replace the placeholder hosts with the router, public endpoint, VPN, DNS server, or service you want to measure.
+3. Choose **Save and Validate**.
+4. Press **Start** in the toolbar.
+5. Add a marker when something breaks, then export an HTML report for the same time range.
+
+Closing the window leaves Netprobe available from the menu bar. Choosing **Quit Netprobe** stops a collector started by the app.
+
+Development builds are ad-hoc signed. To create a Developer ID build, provide the exact identity listed by `security find-identity -v -p codesigning`:
 
 ```text
 NETPROBE_VERSION=0.1.0 \
@@ -39,7 +35,23 @@ NETPROBE_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
 ./scripts/build-macos-app.sh
 ```
 
-The resulting app still needs to be archived and submitted to Apple's notarization service before public distribution. The GUI bundles the terminal executable at `Netprobe.app/Contents/Helpers/netprobe`; terminal-only releases remain supported separately.
+The signed app still needs Apple notarization before public distribution.
+
+## Terminal quick start
+
+Build the command-line application:
+
+```text
+go build -trimpath -ldflags "-s -w" -o netprobe ./cmd/netprobe
+```
+
+Copy `netprobe.example.yaml` to the normal configuration directory and replace its example hosts:
+
+- macOS: `~/Library/Application Support/netprobe/config.yaml`
+- Windows: `%AppData%\netprobe\config.yaml`
+- Linux: `~/.config/netprobe/config.yaml`
+
+Any location can be used with `--config PATH` or `NETPROBE_CONFIG`.
 
 ```text
 netprobe config check
@@ -52,6 +64,33 @@ netprobe report --since 2h --format html --output incident.html
 ```
 
 Stop the collector with Ctrl-C or a normal termination signal. In-flight results finish or time out, SQLite commits are preserved, and the incident index is refreshed.
+
+## Basic configuration
+
+This is enough to distinguish a local network failure from a broader connectivity problem:
+
+```yaml
+database: netprobe.db
+concurrency: 8
+incident_window: 5s
+
+targets:
+  - name: home-router
+    host: 192.168.1.1
+    type: icmp
+    interval: 1s
+    timeout: 800ms
+    tags: [local]
+
+  - name: public-internet
+    host: 1.1.1.1
+    type: icmp
+    interval: 1s
+    timeout: 800ms
+    tags: [public]
+```
+
+Replace `192.168.1.1` with your actual gateway. Add VPN, DNS, TCP, and HTTP targets from [`netprobe.example.yaml`](netprobe.example.yaml) once the basic pair works.
 
 ## Commands
 
@@ -90,6 +129,8 @@ Unknown fields, duplicate names, missing type-specific settings, invalid URLs an
 ## How classification works
 
 Classifications are deliberately worded as **likely**. They are evidence summaries, not proof:
+
+![Netprobe incident list showing the affected targets and likely scope](docs/images/netprobe-incidents.png)
 
 - **local network** — a `local` gateway and downstream targets fail together.
 - **ISP or upstream** — a local target remains reachable while `public` targets fail.
