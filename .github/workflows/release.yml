@@ -64,36 +64,29 @@ jobs:
           NETPROBE_BUILD_NUMBER: ${{ github.run_number }}
         run: ./scripts/build-macos-app.sh
 
-      - name: Notarize app
+      - name: Package and notarize DMG
+        id: package
         env:
+          VERSION: ${{ steps.version.outputs.version }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
         shell: bash
         run: |
+          archive="dist/Netprobe-${VERSION}-macOS-universal.dmg"
           key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          submission_path="$RUNNER_TEMP/Netprobe-notarization.zip"
 
+          NETPROBE_VERSION="$VERSION" NETPROBE_DMG_PATH="$archive" ./scripts/build-macos-dmg.sh
           printf '%s' "$APPLE_API_PRIVATE_KEY" > "$key_path"
-          ditto -c -k --keepParent dist/Netprobe.app "$submission_path"
-          xcrun notarytool submit "$submission_path" \
+          xcrun notarytool submit "$archive" \
             --key "$key_path" \
             --key-id "$APPLE_API_KEY_ID" \
             --issuer "$APPLE_API_ISSUER_ID" \
             --wait
-          xcrun stapler staple dist/Netprobe.app
-          xcrun stapler validate dist/Netprobe.app
-          spctl --assess --type execute --verbose=2 dist/Netprobe.app
-
-      - name: Package release
-        id: package
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        shell: bash
-        run: |
-          archive="Netprobe-${VERSION}-macOS-universal.zip"
-          ditto -c -k --sequesterRsrc --keepParent dist/Netprobe.app "$archive"
-          shasum -a 256 "$archive" > "$archive.sha256"
+          xcrun stapler staple "$archive"
+          xcrun stapler validate "$archive"
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$archive"
+          (cd dist && shasum -a 256 "$(basename "$archive")" > "$(basename "$archive").sha256")
           echo "archive=$archive" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub release

@@ -1,6 +1,6 @@
 # Releasing Netprobe
 
-Pushing a version tag builds a universal Mac app, signs it with Developer ID, sends it to Apple for notarization, and publishes it on GitHub.
+Pushing a version tag builds a universal Mac app, signs the app and disk image with Developer ID, sends the disk image to Apple for notarization, and publishes it on GitHub.
 
 ## One-time setup
 
@@ -35,4 +35,4 @@ git tag -a v0.1.0 -m "Netprobe 0.1.0"
 git push origin v0.1.0
 ```
 
-The tag becomes the app version. GitHub publishes `Netprobe-0.1.0-macOS-universal.zip` and its SHA-256 checksum after Apple accepts the notarization.
+The tag becomes the app version. GitHub publishes `Netprobe-0.1.0-macOS-universal.dmg` and its SHA-256 checksum after Apple accepts the notarization. The disk image contains `Netprobe.app` and an Applications shortcut for drag-to-install setup.

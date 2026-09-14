@@ -25,6 +25,12 @@ Build the macOS application with:
 ./scripts/build-macos-app.sh
 ```
 
+Create the distributable disk image after building the app with:
+
+```text
+./scripts/build-macos-dmg.sh
+```
+
 Development builds are ad-hoc signed. For a Developer ID build, provide the exact identity reported by `security find-identity -v -p codesigning`:
 
 ```text
