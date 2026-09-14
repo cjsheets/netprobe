@@ -6,7 +6,7 @@ It runs ICMP, TCP, DNS, and HTTP probes on independent schedules, stores the res
 
 ![Netprobe macOS dashboard showing live latency, routes, and target status](docs/images/netprobe-dashboard.png)
 
-The screenshot uses the included example configuration. Its VPN and work targets are placeholders, so those failures are expected.
+The dashboard uses the four-target configuration shipped with Netprobe. It works without customization on most home networks.
 
 ## macOS quick start
 
@@ -20,7 +20,7 @@ open dist/Netprobe.app
 Once the app opens:
 
 1. Open **Configuration** and choose **Install Example**.
-2. Replace the placeholder hosts with the router, public endpoint, VPN, DNS server, or service you want to measure.
+2. Replace `192.168.1.1` if your router uses another address. The three public targets are ready to use.
 3. Choose **Save and Validate**.
 4. Press **Start** in the toolbar.
 5. Add a marker when something breaks, then export an HTML report for the same time range.
@@ -67,7 +67,7 @@ Stop the collector with Ctrl-C or a normal termination signal. In-flight results
 
 ## Basic configuration
 
-This is enough to distinguish a local network failure from a broader connectivity problem:
+The shipped configuration checks a common home gateway and public resolver addresses from Cloudflare, Google, and Quad9:
 
 ```yaml
 database: netprobe.db
@@ -82,15 +82,29 @@ targets:
     timeout: 800ms
     tags: [local]
 
-  - name: public-internet
+  - name: cloudflare
     host: 1.1.1.1
+    type: icmp
+    interval: 1s
+    timeout: 800ms
+    tags: [public]
+
+  - name: google
+    host: 8.8.8.8
+    type: icmp
+    interval: 1s
+    timeout: 800ms
+    tags: [public]
+
+  - name: quad9
+    host: 9.9.9.9
     type: icmp
     interval: 1s
     timeout: 800ms
     tags: [public]
 ```
 
-Replace `192.168.1.1` with your actual gateway. Add VPN, DNS, TCP, and HTTP targets from [`netprobe.example.yaml`](netprobe.example.yaml) once the basic pair works.
+Replace `192.168.1.1` if your gateway uses another address. The public addresses are anycast: they are operated by different organizations, but usually route to nearby sites rather than fixed locations in the US or EU. Add your own VPN, DNS, TCP, and HTTP targets once this default set works.
 
 ## Commands
 
@@ -131,6 +145,8 @@ Unknown fields, duplicate names, missing type-specific settings, invalid URLs an
 Classifications are deliberately worded as **likely**. They are evidence summaries, not proof:
 
 ![Netprobe incident list showing the affected targets and likely scope](docs/images/netprobe-incidents.png)
+
+The incident example uses an expanded configuration with placeholder VPN and work targets, so those failures are expected.
 
 - **local network** — a `local` gateway and downstream targets fail together.
 - **ISP or upstream** — a local target remains reachable while `public` targets fail.

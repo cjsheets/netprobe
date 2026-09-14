@@ -14,44 +14,30 @@ targets:
     timeout: 800ms
     tags: [local]
 
-  - name: public-internet
-    description: Stable public endpoint; replace with one you trust
+  # These are public DNS resolver addresses operated by different organizations.
+  # They use anycast, so they normally route to a nearby site rather than a fixed
+  # country. The operator diversity is useful; the addresses do not prove that
+  # three different geographic regions are reachable.
+  - name: cloudflare
+    description: Cloudflare public DNS
     host: 1.1.1.1
     type: icmp
     interval: 1s
     timeout: 800ms
     tags: [public]
 
-  - name: vpn-public
-    description: VPN server's public address
-    host: vpn.example.net
+  - name: google
+    description: Google Public DNS
+    host: 8.8.8.8
     type: icmp
     interval: 1s
     timeout: 800ms
-    tags: [public, vpn]
+    tags: [public]
 
-  - name: work-dns
-    description: Internal resolver queried through the VPN
-    type: dns
-    resolver: 10.20.0.53
-    query: intranet.example.corp
+  - name: quad9
+    description: Quad9 public DNS
+    host: 9.9.9.9
+    type: icmp
     interval: 1s
-    timeout: 900ms
-    tags: [vpn, work]
-
-  - name: remote-desktop
-    description: Remote desktop service
-    host: desktop.example.corp
-    type: tcp
-    port: 3389
-    interval: 1s
-    timeout: 900ms
-    tags: [vpn, work, service]
-
-  - name: service-health
-    description: Optional HTTPS application check
-    type: http
-    url: https://service.example.com/health
-    interval: 5s
-    timeout: 3s
-    tags: [service]
+    timeout: 800ms
+    tags: [public]

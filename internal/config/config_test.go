@@ -28,7 +28,22 @@ func TestExampleLoads(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(c.Targets) < 5 {
+	if len(c.Targets) != 4 {
 		t.Fatalf("targets=%d", len(c.Targets))
+	}
+	want := map[string]string{
+		"home-router": "192.168.1.1",
+		"cloudflare":  "1.1.1.1",
+		"google":      "8.8.8.8",
+		"quad9":       "9.9.9.9",
+	}
+	for _, target := range c.Targets {
+		if host, ok := want[target.Name]; !ok || target.Host != host {
+			t.Errorf("unexpected default target %q at %q", target.Name, target.Host)
+		}
+		delete(want, target.Name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing default targets: %v", want)
 	}
 }
