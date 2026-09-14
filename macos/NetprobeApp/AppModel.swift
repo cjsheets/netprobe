@@ -73,7 +73,6 @@ final class AppModel: ObservableObject {
             guard result.status == 0 else { message = clean(result.error); return }
             do {
                 bundle = try JSONDecoder.netprobe.decode(ExportBundle.self, from: Data(result.output.utf8))
-                if selectedTarget == nil { selectedTarget = bundle?.targets.first?.name }
                 if Date() >= actionMessageUntil {
                     message = "Updated \(Date().formatted(date: .omitted, time: .standard))"
                 }
