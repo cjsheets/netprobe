@@ -20,6 +20,27 @@ Copy `netprobe.example.yaml` to one of these locations and replace the example h
 
 Any location can be used with `--config PATH` or `NETPROBE_CONFIG`.
 
+### Native macOS app
+
+Netprobe also includes a SwiftUI dashboard for macOS 13 and newer. It provides live latency/loss charts, target routes, incidents, markers, configuration validation, collector controls, report export, and menu-bar status while retaining the same Go collector and SQLite database.
+
+Build a universal Apple Silicon/Intel application with Xcode and Go installed:
+
+```text
+./scripts/build-macos-app.sh
+open dist/Netprobe.app
+```
+
+The development build is ad-hoc signed. For Developer ID signing, provide the exact identity from `security find-identity -v -p codesigning`:
+
+```text
+NETPROBE_VERSION=0.1.0 \
+NETPROBE_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+./scripts/build-macos-app.sh
+```
+
+The resulting app still needs to be archived and submitted to Apple's notarization service before public distribution. The GUI bundles the terminal executable at `Netprobe.app/Contents/Helpers/netprobe`; terminal-only releases remain supported separately.
+
 ```text
 netprobe config check
 netprobe run
