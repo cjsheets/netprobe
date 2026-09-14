@@ -1,0 +1,109 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.24.x"
+          cache: true
+
+      - name: Read version from tag
+        id: version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must use vMAJOR.MINOR.PATCH, for example v0.1.0" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Install Developer ID certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        shell: bash
+        run: |
+          certificate_path="$RUNNER_TEMP/developer-id.p12"
+          keychain_path="$RUNNER_TEMP/netprobe-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+
+          printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security list-keychain -d user -s "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain_path"
+
+          identity="$(security find-identity -v -p codesigning "$keychain_path" | sed -n 's/.*"\(Developer ID Application:.*\)"/\1/p' | head -1)"
+          if [[ -z "$identity" ]]; then
+            echo "The certificate is not a Developer ID Application certificate" >&2
+            exit 1
+          fi
+          echo "NETPROBE_CODESIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - name: Build signed app
+        env:
+          NETPROBE_VERSION: ${{ steps.version.outputs.version }}
+          NETPROBE_BUILD_NUMBER: ${{ github.run_number }}
+        run: ./scripts/build-macos-app.sh
+
+      - name: Notarize app
+        env:
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        shell: bash
+        run: |
+          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          submission_path="$RUNNER_TEMP/Netprobe-notarization.zip"
+
+          printf '%s' "$APPLE_API_PRIVATE_KEY" > "$key_path"
+          ditto -c -k --keepParent dist/Netprobe.app "$submission_path"
+          xcrun notarytool submit "$submission_path" \
+            --key "$key_path" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --wait
+          xcrun stapler staple dist/Netprobe.app
+          xcrun stapler validate dist/Netprobe.app
+          spctl --assess --type execute --verbose=2 dist/Netprobe.app
+
+      - name: Package release
+        id: package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          archive="Netprobe-${VERSION}-macOS-universal.zip"
+          ditto -c -k --sequesterRsrc --keepParent dist/Netprobe.app "$archive"
+          shasum -a 256 "$archive" > "$archive.sha256"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "$ARCHIVE" \
+            "$ARCHIVE.sha256" \
+            --generate-notes \
+            --title "Netprobe $GITHUB_REF_NAME"

@@ -37,4 +37,4 @@ Most home routers use `192.168.1.1`. Change that address if yours does not. The 
 
 The time menu changes how much history is visible. It does not stop collection. Pressing **Start** begins a clean dashboard view; earlier results stay available for reports.
 
-The same collector also runs from a terminal on macOS, Linux, and Windows. See the [CLI and configuration guide](docs/cli.md), [advanced usage](docs/advanced.md), or [contributor guide](CONTRIBUTING.md) when you need more than the basic app.
+The same collector also runs from a terminal on macOS, Linux, and Windows. See the [CLI and configuration guide](docs/cli.md), [advanced usage](docs/advanced.md), [release guide](docs/releasing.md), or [contributor guide](CONTRIBUTING.md) when you need more than the basic app.
