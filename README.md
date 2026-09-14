@@ -4,8 +4,6 @@ Five seconds of bad internet is easy to notice and hard to explain. `netprobe` k
 
 Press **Start** and leave it running. The default setup checks your home router plus public endpoints from Cloudflare, Google, and Quad9. If the connection stutters, the chart and incident view keep the useful context.
 
-![Netprobe monitoring its four default targets](docs/images/netprobe-dashboard.png)
-
 ## Run it on macOS
 
 Building the app requires Xcode and Go 1.24 or newer:
@@ -22,8 +20,6 @@ On the first launch:
 3. Press **Start**.
 
 Most home routers use `192.168.1.1`. Change that address if yours does not. The three public targets are ready to use.
-
-![The default Netprobe configuration](docs/images/netprobe-configuration.png)
 
 The time menu changes how much history is visible. It does not stop collection. Pressing **Start** begins a clean dashboard view; earlier results stay available for reports.
 
