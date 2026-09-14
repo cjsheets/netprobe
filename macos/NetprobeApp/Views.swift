@@ -100,6 +100,7 @@ struct MetricCard: View {
 
 struct LatencyChart: View {
     @EnvironmentObject var model: AppModel
+    @AppStorage("logarithmicYAxis") private var logarithmicYAxis = false
     struct ChartPoint: Identifiable {
         let observation: Observation
         let segment: String
@@ -126,11 +127,21 @@ struct LatencyChart: View {
         }
     }
     var maxLatency: Double { max(10, filtered.compactMap(\.latencyMS).max() ?? 10) }
+    var lossBaseline: Double {
+        guard logarithmicYAxis else { return 0 }
+        return max(0.1, (filtered.compactMap(\.latencyMS).filter { $0 > 0 }.min() ?? 0.1) * 0.8)
+    }
+    func chartLatency(_ latency: Double) -> Double {
+        logarithmicYAxis ? max(0.1, latency) : latency
+    }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Latency and loss").font(.headline)
                 Spacer()
+                Toggle("Log scale", isOn: $logarithmicYAxis)
+                    .toggleStyle(.checkbox)
+                    .help("Use a logarithmic axis to keep large spikes from hiding smaller latency changes.")
                 Picker("Target", selection: $model.selectedTarget) {
                     Text("All targets").tag(String?.none)
                     ForEach(model.targets) { Text($0.name).tag(Optional($0.name)) }
@@ -146,13 +157,13 @@ struct LatencyChart: View {
                     }
                     ForEach(chartPoints.filter { $0.observation.success }) { point in
                         if let latency = point.observation.latencyMS {
-                            LineMark(x: .value("Time", point.observation.timestamp), y: .value("Latency", latency), series: .value("Run", point.segment))
+                            LineMark(x: .value("Time", point.observation.timestamp), y: .value("Latency", chartLatency(latency)), series: .value("Run", point.segment))
                                 .foregroundStyle(by: .value("Target", point.observation.target))
                                 .interpolationMethod(.linear)
                         }
                     }
                     ForEach(filtered.filter { !$0.success }) { observation in
-                        PointMark(x: .value("Time", observation.timestamp), y: .value("Failure", 0))
+                        PointMark(x: .value("Time", observation.timestamp), y: .value("Failure", lossBaseline))
                             .foregroundStyle(.red).symbolSize(70)
                             .annotation(position: .top) { Image(systemName: "xmark").font(.caption2.bold()).foregroundStyle(.red) }
                     }
@@ -160,6 +171,7 @@ struct LatencyChart: View {
                         RuleMark(x: .value("Marker", marker.timestamp)).foregroundStyle(.orange).lineStyle(StrokeStyle(dash: [3, 3]))
                     }
                 }
+                .chartYScale(type: logarithmicYAxis ? ScaleType.log : ScaleType.linear)
                 .chartYAxisLabel("Milliseconds")
                 .chartLegend(position: .bottom, alignment: .leading)
                 .accessibilityLabel("Network latency and packet loss timeline")

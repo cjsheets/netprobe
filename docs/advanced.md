@@ -1,5 +1,9 @@
 # Advanced usage
 
+## Chart scale
+
+The dashboard uses a linear latency scale by default. Enable **Log scale** when a large spike makes the normal latency band difficult to read. Packet-loss markers remain separate from successful latency measurements.
+
 ## Incident classification
 
 Classifications are deliberately worded as **likely**. They summarize the available evidence; they are not proof.
