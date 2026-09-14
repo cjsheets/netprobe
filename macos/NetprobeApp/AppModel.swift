@@ -26,9 +26,11 @@ final class AppModel: ObservableObject {
     private var pollingTask: Task<Void, Never>?
     private var actionMessageUntil = Date.distantPast
     private var currentRunStartedAt: Date?
+    private var resolvedConfigPath: String { NSString(string: configPath).expandingTildeInPath }
 
     init() {
-        configPath = UserDefaults.standard.string(forKey: "configPath") ?? NetprobePaths.defaultConfig.path
+        let savedPath = UserDefaults.standard.string(forKey: "configPath") ?? NetprobePaths.defaultConfig.path
+        configPath = Self.abbreviateHome(in: savedPath)
         loadConfiguration()
     }
 
@@ -80,7 +82,7 @@ final class AppModel: ObservableObject {
             return
         }
         isRefreshing = true
-        let arguments = ["--config", configPath, "export", "--since", selectedRange.rawValue, "--format", "json"]
+        let arguments = ["--config", resolvedConfigPath, "export", "--since", selectedRange.rawValue, "--format", "json"]
         Task {
             let result = await ProcessRunner.capture(executable: helper, arguments: arguments)
             defer { isRefreshing = false }
@@ -98,11 +100,11 @@ final class AppModel: ObservableObject {
         guard !isCollecting else { message = "A collector is already running"; return }
         guard let helper = NetprobePaths.helper else { message = "Bundled netprobe helper was not found"; return }
         do {
-            let logURL = URL(fileURLWithPath: configPath).deletingLastPathComponent().appendingPathComponent("collector.log")
+            let logURL = URL(fileURLWithPath: resolvedConfigPath).deletingLastPathComponent().appendingPathComponent("collector.log")
             try FileManager.default.createDirectory(at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             if !FileManager.default.fileExists(atPath: logURL.path) { FileManager.default.createFile(atPath: logURL.path, contents: nil) }
             let log = try FileHandle(forWritingTo: logURL); try log.seekToEnd()
-            let process = Process(); process.executableURL = helper; process.arguments = ["--config", configPath, "run"]; process.standardOutput = log; process.standardError = log
+            let process = Process(); process.executableURL = helper; process.arguments = ["--config", resolvedConfigPath, "run"]; process.standardOutput = log; process.standardError = log
             process.terminationHandler = { [weak self] process in Task { @MainActor in self?.collectorDidStop(status: process.terminationStatus); try? log.close() } }
             try process.run()
             currentRunStartedAt = Date()
@@ -129,20 +131,20 @@ final class AppModel: ObservableObject {
         guard !text.isEmpty, let helper = NetprobePaths.helper else { return }
         markerText = ""; showMarkerSheet = false
         Task {
-            let result = await ProcessRunner.capture(executable: helper, arguments: ["--config", configPath, "mark", text])
+            let result = await ProcessRunner.capture(executable: helper, arguments: ["--config", resolvedConfigPath, "mark", text])
             showActionMessage(result.status == 0 ? "Marker recorded" : clean(result.error))
             refresh()
         }
     }
 
     func loadConfiguration() {
-        configurationText = (try? String(contentsOfFile: configPath, encoding: .utf8)) ?? ""
+        configurationText = (try? String(contentsOfFile: resolvedConfigPath, encoding: .utf8)) ?? ""
     }
 
     func installExampleConfiguration() {
         guard let example = NetprobePaths.exampleConfig else { message = "Example configuration is missing"; return }
         do {
-            let destination = URL(fileURLWithPath: configPath)
+            let destination = URL(fileURLWithPath: resolvedConfigPath)
             try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             if FileManager.default.fileExists(atPath: destination.path) { message = "A configuration already exists at this location"; return }
             try FileManager.default.copyItem(at: example, to: destination); loadConfiguration(); showActionMessage("Default configuration installed")
@@ -151,14 +153,14 @@ final class AppModel: ObservableObject {
 
     func saveAndValidateConfiguration() {
         do {
-            let destination = URL(fileURLWithPath: configPath)
+            let destination = URL(fileURLWithPath: resolvedConfigPath)
             try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             try configurationText.write(to: destination, atomically: true, encoding: .utf8)
-            UserDefaults.standard.set(configPath, forKey: "configPath")
+            UserDefaults.standard.set(resolvedConfigPath, forKey: "configPath")
         } catch { message = "Could not save configuration: \(error.localizedDescription)"; return }
         guard let helper = NetprobePaths.helper else { message = "Configuration saved; helper not found for validation"; return }
         Task {
-            let result = await ProcessRunner.capture(executable: helper, arguments: ["--config", configPath, "config", "check"])
+            let result = await ProcessRunner.capture(executable: helper, arguments: ["--config", resolvedConfigPath, "config", "check"])
             showActionMessage(result.status == 0 ? result.output.trimmingCharacters(in: .whitespacesAndNewlines) : clean(result.error))
             if result.status == 0 { refresh() }
         }
@@ -169,7 +171,7 @@ final class AppModel: ObservableObject {
         let panel = NSSavePanel(); panel.nameFieldStringValue = "netprobe-report.html"; panel.allowedContentTypes = [.html]
         guard panel.runModal() == .OK, let url = panel.url else { return }
         Task {
-            let result = await ProcessRunner.capture(executable: helper, arguments: ["--config", configPath, "report", "--since", selectedRange.rawValue, "--format", "html", "--output", url.path])
+            let result = await ProcessRunner.capture(executable: helper, arguments: ["--config", resolvedConfigPath, "report", "--since", selectedRange.rawValue, "--format", "html", "--output", url.path])
             showActionMessage(result.status == 0 ? "Report saved to \(url.lastPathComponent)" : clean(result.error))
             if result.status == 0 { NSWorkspace.shared.activateFileViewerSelecting([url]) }
         }
@@ -182,6 +184,13 @@ final class AppModel: ObservableObject {
     private func observationsSinceCurrentRun(_ values: [Observation]) -> [Observation] {
         guard let currentRunStartedAt else { return values }
         return values.filter { $0.timestamp >= currentRunStartedAt }
+    }
+
+    private static func abbreviateHome(in path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if path == home { return "~" }
+        if path.hasPrefix(home + "/") { return "~" + path.dropFirst(home.count) }
+        return path
     }
 
     private func showActionMessage(_ value: String) {
